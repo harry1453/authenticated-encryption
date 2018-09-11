@@ -1,4 +1,4 @@
-package com.harry1453.encryptionutils
+package com.harry1453.authenticatedencryption
 
 import android.arch.lifecycle.ViewModel
 import android.arch.lifecycle.ViewModelProvider

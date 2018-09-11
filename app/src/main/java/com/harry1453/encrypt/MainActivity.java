@@ -1,12 +1,10 @@
-package com.harry1453.android.encrypt;
+package com.harry1453.encrypt;
 
 import android.support.annotation.NonNull;
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.util.Log;
 
-import com.harry1453.encryptionutils.AuthenticationConfig;
-import com.harry1453.encryptionutils.EncryptionActivity;
+import com.harry1453.authenticatedencryption.AuthenticationConfig;
+import com.harry1453.authenticatedencryption.EncryptionActivity;
 
 public class MainActivity extends EncryptionActivity {
 

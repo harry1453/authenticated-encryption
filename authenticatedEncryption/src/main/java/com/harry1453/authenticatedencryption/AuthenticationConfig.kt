@@ -1,4 +1,4 @@
-package com.harry1453.encryptionutils
+package com.harry1453.authenticatedencryption
 
 data class AuthenticationConfig(
         val keyName: String,
