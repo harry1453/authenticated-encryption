@@ -19,19 +19,19 @@ abstract class EncryptionActivity : AppCompatActivity() {
         viewModel.encryptionService.onActivityResult(requestCode, resultCode)
     }
 
-    protected fun encrypt(message: String): Single<String> {
+    protected fun encrypt(message: String): Single<EncryptedData> {
         return viewModel.encryptionService.encrypt(this, message)
     }
 
-    protected fun encrypt(message: String, title: String, description: String): Single<String> {
+    protected fun encrypt(message: String, title: String, description: String): Single<EncryptedData> {
         return viewModel.encryptionService.encrypt(this, message, title, description)
     }
 
-    protected fun decrypt(encryptedMessage: String): Single<String> {
+    protected fun decrypt(encryptedMessage: EncryptedData): Single<String> {
         return viewModel.encryptionService.decrypt(this, encryptedMessage)
     }
 
-    protected fun decrypt(encryptedMessage: String, title: String, description: String): Single<String> {
+    protected fun decrypt(encryptedMessage: EncryptedData, title: String, description: String): Single<String> {
         return viewModel.encryptionService.decrypt(this, encryptedMessage, title, description)
     }
 

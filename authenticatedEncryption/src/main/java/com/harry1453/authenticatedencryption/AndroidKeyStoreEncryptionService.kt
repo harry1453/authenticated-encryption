@@ -11,8 +11,8 @@ import android.util.Base64
 import io.reactivex.Single
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
-import java.nio.charset.Charset
-import java.security.*
+import java.security.KeyException
+import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -21,7 +21,6 @@ import javax.crypto.spec.IvParameterSpec
 class AndroidKeyStoreEncryptionService private constructor(private val keyguardManager: KeyguardManager, private val authenticationConfig: AuthenticationConfig) {
 
     private val authenticateRequestCode = 1001
-    private val ivBytes = "encryptionIntVec"
 
     init {
         try {
@@ -76,10 +75,10 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
      * @throws KeyPermanentlyInvalidatedException if the key is invalidated
      * @throws IllegalArgumentException if there was an error encrypting the data
      */
-    fun encrypt(activity: Activity, message: String, title: String = authenticationConfig.defaultAuthenticationDialogTitle, description: String = authenticationConfig.defaultAuthenticationDialogDescription): Single<String> = Single.create<String> { emitter ->
+    fun encrypt(activity: Activity, message: String, title: String = authenticationConfig.defaultAuthenticationDialogTitle, description: String = authenticationConfig.defaultAuthenticationDialogDescription): Single<EncryptedData> = Single.create<EncryptedData> { emitter ->
         authenticationResultListener = { result ->
             if (result == Activity.RESULT_OK) {
-                var encryptionResult = ""
+                var encryptionResult: EncryptedData? = null
                 try {
                     encryptionResult = tryEncrypt(message) ?: throw IllegalArgumentException()
                 } catch (e: UserNotAuthenticatedException) {
@@ -89,8 +88,8 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
                 } catch (e: IllegalArgumentException) {
                     emitter.onError(RuntimeException("Could not encrypt data", e))
                 }
-                if (encryptionResult != "") {
-                emitter.onSuccess(encryptionResult)
+                if (encryptionResult != null) {
+                    emitter.onSuccess(encryptionResult)
                 }
             } else {
                 emitter.onError(UserNotAuthenticatedException("User did not authenticate"))
@@ -116,7 +115,7 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
      * @throws KeyPermanentlyInvalidatedException if the key is invalidated
      * @throws IllegalArgumentException if there was an error decrypting the data
      */
-    fun decrypt(activity: Activity, encryptedMessage: String, title: String = authenticationConfig.defaultAuthenticationDialogTitle, description: String = authenticationConfig.defaultAuthenticationDialogDescription): Single<String> = Single.create<String> { emitter ->
+    fun decrypt(activity: Activity, encryptedMessage: EncryptedData, title: String = authenticationConfig.defaultAuthenticationDialogTitle, description: String = authenticationConfig.defaultAuthenticationDialogDescription): Single<String> = Single.create<String> { emitter ->
         authenticationResultListener = { result ->
             if (result == Activity.RESULT_OK) {
                 var decryptionResult = ""
@@ -173,10 +172,6 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
         return Cipher.getInstance(KeyProperties.KEY_ALGORITHM_AES + "/" + KeyProperties.BLOCK_MODE_CBC + "/" + KeyProperties.ENCRYPTION_PADDING_PKCS7)
     }
 
-    private fun getIvParameterSpec(): IvParameterSpec {
-        return IvParameterSpec(ivBytes.toByteArray(Charset.defaultCharset()))
-    }
-
     /**
      * Creates the default key in the Android KeyStore.
      *
@@ -192,7 +187,6 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
                     .setUserAuthenticationRequired(true)
                     .setUserAuthenticationValidityDurationSeconds(1) // Requires authentication every time
                     .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_PKCS7)
-                    .setRandomizedEncryptionRequired(false) // FIXME
                     .build())
             keyGenerator.generateKey()
             return true
@@ -217,7 +211,7 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
      *
      * @throws NullPointerException if the key has not been created yet.
      */
-    private fun tryEncrypt(message: String): String? {
+    private fun tryEncrypt(message: String): EncryptedData? {
         return try {
             encrypt(message, getKey())
         } catch (e: NullPointerException) {
@@ -251,7 +245,7 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
      *
      * @throws NullPointerException if the key has not been created yet.
      */
-    private fun tryDecrypt(encryptedMessage: String): String? {
+    private fun tryDecrypt(encryptedMessage: EncryptedData): String? {
         return try {
             decrypt(encryptedMessage, getKey())
         } catch (e: NullPointerException) {
@@ -274,10 +268,12 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
      *
      * Throws many different exceptions depending on the keystore used.
      */
-    private fun encrypt(message: String, key: SecretKey): String {
+    private fun encrypt(message: String, key: SecretKey): EncryptedData {
         val cipher = getCipher()
-        cipher.init(Cipher.ENCRYPT_MODE, key, getIvParameterSpec())
-        return Base64.encodeToString(cipher.doFinal(message.toByteArray()), Base64.DEFAULT)
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        val encryptedData = Base64.encodeToString(cipher.doFinal(message.toByteArray()), Base64.DEFAULT).toByteArray()
+        val iv = cipher.iv
+        return EncryptedData(encryptedData, iv)
     }
 
     /**
@@ -285,9 +281,9 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
      *
      * Throws many different exceptions depending on the keystore used.
      */
-    private fun decrypt(encrypted: String, key: SecretKey): String {
+    private fun decrypt(encrypted: EncryptedData, key: SecretKey): String {
         val cipher = getCipher()
-        cipher.init(Cipher.DECRYPT_MODE, key, getIvParameterSpec())
-        return String(cipher.doFinal(Base64.decode(encrypted, Base64.DEFAULT)))
+        cipher.init(Cipher.DECRYPT_MODE, key, IvParameterSpec(encrypted.iv))
+        return String(cipher.doFinal(Base64.decode(encrypted.encryptedData, Base64.DEFAULT)))
     }
 }
