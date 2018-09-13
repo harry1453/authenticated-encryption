@@ -6,16 +6,8 @@ import java.util.*
 
 class EncryptedData : Parcelable {
 
-    override fun writeToParcel(dest: Parcel, flags: Int) {
-        dest.writeString(this.toString())
-    }
-
-    override fun describeContents() = 0
-
     val encryptedData: ByteArray
     val iv: ByteArray
-
-    constructor(parcel: Parcel) : this(parcel.readString())
 
     constructor(encryptedData: ByteArray, iv: ByteArray) {
         this.encryptedData = encryptedData
@@ -26,7 +18,7 @@ class EncryptedData : Parcelable {
         val stringTokenizer = StringTokenizer(stringRepresentation, "/")
 
         if (stringTokenizer.countTokens() != 2) {
-            throw IllegalArgumentException()
+            throw IllegalArgumentException("String representation of EncryptedData invalid.")
         }
 
         this.iv = ByteArrayUtils.hexStringToByteArray(stringTokenizer.nextToken())
@@ -35,13 +27,17 @@ class EncryptedData : Parcelable {
 
     override fun toString() = ByteArrayUtils.toHexString(iv) + "/" + ByteArrayUtils.toHexString(encryptedData)
 
-    companion object CREATOR : Parcelable.Creator<EncryptedData> {
-        override fun createFromParcel(parcel: Parcel): EncryptedData {
-            return EncryptedData(parcel)
-        }
+    override fun equals(other: Any?) = Objects.equals(this.toString(), other.toString())
 
-        override fun newArray(size: Int): Array<EncryptedData?> {
-            return arrayOfNulls(size)
-        }
+    override fun writeToParcel(dest: Parcel, flags: Int) {
+        dest.writeString(this.toString())
+    }
+
+    override fun describeContents() = 0
+
+    companion object CREATOR : Parcelable.Creator<EncryptedData> {
+        override fun createFromParcel(parcel: Parcel) = EncryptedData(parcel.readString())
+
+        override fun newArray(size: Int): Array<EncryptedData?> = arrayOfNulls(size)
     }
 }
