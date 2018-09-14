@@ -35,6 +35,8 @@ class EncryptedData : Parcelable {
 
     override fun describeContents() = 0
 
+    override fun hashCode() = toString().hashCode()
+
     companion object CREATOR : Parcelable.Creator<EncryptedData> {
         override fun createFromParcel(parcel: Parcel) = EncryptedData(parcel.readString())
 
