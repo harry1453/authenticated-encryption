@@ -8,9 +8,14 @@ import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.security.keystore.UserNotAuthenticatedException
 import android.util.Base64
+import com.harry1453.authenticatedencryption.exception.AuthenticationException
+import com.harry1453.authenticatedencryption.exception.DecryptionException
+import com.harry1453.authenticatedencryption.exception.EncryptionException
+import com.harry1453.authenticatedencryption.exception.NoLockScreenException
 import io.reactivex.Single
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
+import java.security.InvalidAlgorithmParameterException
 import java.security.KeyException
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -18,7 +23,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.IvParameterSpec
 
-class AndroidKeyStoreEncryptionService private constructor(private val keyguardManager: KeyguardManager, private val authenticationConfig: AuthenticationConfig) {
+class AndroidKeyStoreEncryptionService @Throws(NoLockScreenException::class) private constructor(private val keyguardManager: KeyguardManager, private val authenticationConfig: AuthenticationConfig) {
 
     private val authenticateRequestCode = 1001
 
@@ -69,33 +74,32 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
      * @param title The title of the authentication activity
      * @param description The description shown in the authentication activity
      *
-     * Within the Single:
-     * @return The encrypted message
-     * @throws UserNotAuthenticatedException if the user did not authenticate
-     * @throws KeyPermanentlyInvalidatedException if the key is invalidated
-     * @throws IllegalArgumentException if there was an error encrypting the data
+     * @return (From the Single) The decrypted message
+     * @throws AuthenticationException (within the single) if the user did not authenticate
+     * @throws KeyPermanentlyInvalidatedException (within the single) if the key has been permanently invalidated within the Android KeyStore, such as by fingerprint enrollment
+     * @throws EncryptionException (within the single) if the encryption was unsuccessful and the data could not be encrypted.
      */
     fun encrypt(activity: Activity, message: String, title: String = authenticationConfig.defaultAuthenticationDialogTitle, description: String = authenticationConfig.defaultAuthenticationDialogDescription): Single<EncryptedData> = Single.create<EncryptedData> { emitter ->
         authenticationResultListener = { result ->
             if (result == Activity.RESULT_OK) {
                 var encryptionResult: EncryptedData? = null
+
                 try {
                     encryptionResult = tryEncrypt(message) ?: throw IllegalArgumentException()
                 } catch (e: UserNotAuthenticatedException) {
-                    emitter.onError(e)
+                    emitter.onError(AuthenticationException())
                 } catch (e: KeyPermanentlyInvalidatedException) {
                     emitter.onError(e)
                 } catch (e: IllegalArgumentException) {
-                    emitter.onError(RuntimeException("Could not encrypt data", e))
+                    emitter.onError(EncryptionException())
                 }
                 if (encryptionResult != null) {
                     emitter.onSuccess(encryptionResult)
-                }
+                } // TODO else
             } else {
-                emitter.onError(UserNotAuthenticatedException("User did not authenticate"))
+                emitter.onError(AuthenticationException())
             }
         }
-
         requestKeyPermission(activity, title, description)
     }
             .subscribeOn(Schedulers.computation())
@@ -109,33 +113,32 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
      * @param title The title of the authentication activity
      * @param description The description shown in the authentication activity
      *
-     * Within the Single:
-     * @return The decrypted message
-     * @throws UserNotAuthenticatedException if the user did not authenticate
-     * @throws KeyPermanentlyInvalidatedException if the key is invalidated
-     * @throws IllegalArgumentException if there was an error decrypting the data
+     * @return (From the Single) The decrypted message
+     * @throws AuthenticationException (within the single) if the user did not authenticate
+     * @throws KeyPermanentlyInvalidatedException (within the single) if the key has been permanently invalidated within the Android KeyStore, such as by fingerprint enrollment
+     * @throws EncryptionException (within the single) if the encryption was unsuccessful and the data could not be encrypted.
      */
     fun decrypt(activity: Activity, encryptedMessage: EncryptedData, title: String = authenticationConfig.defaultAuthenticationDialogTitle, description: String = authenticationConfig.defaultAuthenticationDialogDescription): Single<String> = Single.create<String> { emitter ->
         authenticationResultListener = { result ->
             if (result == Activity.RESULT_OK) {
                 var decryptionResult = ""
+
                 try {
                     decryptionResult = tryDecrypt(encryptedMessage) ?: throw IllegalArgumentException()
                 } catch (e: UserNotAuthenticatedException) {
-                    emitter.onError(e)
+                    emitter.onError(AuthenticationException())
                 } catch (e: KeyPermanentlyInvalidatedException) {
                     emitter.onError(e)
                 } catch (e: IllegalArgumentException) {
-                    emitter.onError(RuntimeException("Could not decrypt data", e))
+                    emitter.onError(DecryptionException())
                 }
                 if (decryptionResult != "") {
                     emitter.onSuccess(decryptionResult)
-                }
+                } // TODO Else
             } else {
-                emitter.onError(IllegalArgumentException("User did not authenticate"))
+                emitter.onError(AuthenticationException())
             }
         }
-
         requestKeyPermission(activity, title, description)
     }
             .subscribeOn(Schedulers.computation())
@@ -190,6 +193,13 @@ class AndroidKeyStoreEncryptionService private constructor(private val keyguardM
                     .build())
             keyGenerator.generateKey()
             return true
+        } catch (e: InvalidAlgorithmParameterException) {
+            if (e.cause is IllegalStateException) {
+                throw NoLockScreenException()
+            } else {
+                e.printStackTrace()
+                return false
+            }
         } catch (e: Throwable) {
             e.printStackTrace()
             return false
